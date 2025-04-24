@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import cv2
 import numpy as np
 import base64
+import logging  # Import logging
 
 # Initialize the Flask app
 app = Flask(__name__)
@@ -21,7 +22,7 @@ def decode_base64_image(data_url):
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         return img
     except Exception as e:
-        print("Error decoding image:", e)
+        logging.error(f"Error decoding image: {e}")  # Log error
         return None
 
 # Function to compare two images
@@ -33,32 +34,48 @@ def compare_images(img1, img2):
         similarity = 1 - (np.sum(diff) / (img1.size * 255))
         return round(similarity, 2)
     except Exception as e:
-        print(f"Error comparing images: {e}")
+        logging.error(f"Error comparing images: {e}")  # Log error
         return None
 
 @app.route("/verify_signature", methods=["POST"])
 def verify_signature():
-    if not request.is_json:
-        return jsonify({"error": "Content-Type must be application/json"}), 415
+    # Set up logging
+    logging.basicConfig(level=logging.DEBUG)
+    logging.debug("verify_signature endpoint called")
 
+    # Validate request format
+    if not request.is_json:
+        return jsonify({"error": "Request must be in JSON format"}), 400
+
+    # Parse request data
     data = request.get_json()
+    logging.debug(f"Received JSON Payload: {data}")
+
     original_data = data.get("original")
     compare_data = data.get("compare")
 
+    # Check if both original and comparison images are provided
     if not original_data or not compare_data:
+        logging.warning("Missing 'original' or 'compare' data in the payload")
         return jsonify({"error": "Both 'original' and 'compare' images must be provided."}), 400
 
+    # Decode images
     original_img = decode_base64_image(original_data)
     compare_img = decode_base64_image(compare_data)
 
     if original_img is None or compare_img is None:
+        logging.warning("Failed to decode one or both images")
         return jsonify({"error": "Failed to decode one or both images"}), 400
 
+    # Compare images
     similarity_score = compare_images(original_img, compare_img)
+    logging.debug(f"Similarity score: {similarity_score}")
+
     result = {
-        "valid": similarity_score > 0.85,
+        "valid": similarity_score > 0.85,  # Valid if similarity score exceeds 85%
         "confidence": similarity_score
     }
+    logging.info(f"Verification result: {result}")
     return jsonify(result)
 
 # Example usage within this file
