@@ -6,7 +6,14 @@ import base64
 app = Flask(__name__)
 
 def readb64(uri):
+    import math
     encoded_data = uri.split(',')[-1]
+
+    # Fix padding issue
+    missing_padding = len(encoded_data) % 4
+    if missing_padding:
+        encoded_data += '=' * (4 - missing_padding)
+
     nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     return img
