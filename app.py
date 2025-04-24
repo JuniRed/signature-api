@@ -5,39 +5,44 @@ import numpy as np
 
 app = Flask(__name__)
 
-def compare_images(img1_b64, img2_b64):
+def decode_base64_image(data_url):
     try:
-        img1_data = base64.b64decode(img1_b64.split(',')[-1])
-        img2_data = base64.b64decode(img2_b64.split(',')[-1])
-        img1_np = np.frombuffer(img1_data, np.uint8)
-        img2_np = np.frombuffer(img2_data, np.uint8)
-        img1 = cv2.imdecode(img1_np, cv2.IMREAD_GRAYSCALE)
-        img2 = cv2.imdecode(img2_np, cv2.IMREAD_GRAYSCALE)
-
-        img1 = cv2.resize(img1, (300, 100))
-        img2 = cv2.resize(img2, (300, 100))
-
-        similarity = np.sum(img1 == img2) / img1.size
-        return similarity
+        header, encoded = data_url.split(",", 1)
+        decoded = base64.b64decode(encoded)
+        nparr = np.frombuffer(decoded, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        return img
     except Exception as e:
-        print(f"Error comparing images: {e}")
+        print("Image decoding failed:", e)
         return None
+
+def compare_images(img1, img2):
+    img1 = cv2.resize(img1, (300, 100))
+    img2 = cv2.resize(img2, (300, 100))
+    diff = cv2.absdiff(img1, img2)
+    similarity = 1 - (np.sum(diff) / (img1.size * 255))
+    return round(similarity, 2)
 
 @app.route("/compare", methods=["POST"])
 def compare():
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415
+
+    data = request.get_json()
+    original_data = data.get("original")
+    input_data = data.get("input")
+
+    if not original_data or not input_data:
+        return jsonify({"error": "Both 'original' and 'input' must be provided."}), 400
+
+    img1 = decode_base64_image(original_data)
+    img2 = decode_base64_image(input_data)
+
+    if img1 is None or img2 is None:
+        return jsonify({"error": "Failed to decode one or both images"}), 400
+
     try:
-        data = request.get_json()
-        original = data.get("original")
-        input_img = data.get("input")
-        similarity = compare_images(original, input_img)
-
-        if similarity is None:
-            return jsonify({"error": "Comparison failed"}), 500
-
+        similarity = compare_images(img1, img2)
         return jsonify({"similarity": similarity})
     except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == "__main__":
-    app.run(debug=True)
+        return jsonify({"error": f"Error comparing images: {str(e)}"}), 500
