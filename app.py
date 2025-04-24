@@ -5,51 +5,31 @@ import base64
 
 app = Flask(__name__)
 
-def readb64(uri):
+def decode_base64_image(image_str):
     try:
-        import base64
-        import numpy as np
-        import cv2
-
-        encoded_data = uri.split(",")[-1]
-        missing_padding = len(encoded_data) % 4
-        if missing_padding:
-            encoded_data += "=" * (4 - missing_padding)
-
-        nparr = np.frombuffer(base64.b64decode(encoded_data), np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-
+        image_data = base64.b64decode(image_str)
+        np_arr = np.frombuffer(image_data, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         return img
     except Exception as e:
-        print("Error decoding image:", e)
+        print("Decode failed:", e)
         return None
 
-
 def compare_images(img1, img2):
-    # Resize to same size for fair comparison
     img1 = cv2.resize(img1, (300, 100))
     img2 = cv2.resize(img2, (300, 100))
-
-    # Use Structural Similarity Index (SSIM)
-    from skimage.metrics import structural_similarity as ssim
-    score, _ = ssim(img1, img2, full=True)
-    return score
+    diff = cv2.absdiff(img1, img2)
+    similarity = 1.0 - (np.sum(diff) / (300 * 100 * 255 * 3))  # normalized diff
+    return similarity
 
 @app.route("/compare", methods=["POST"])
-def compare():
+def compare_signatures():
     data = request.get_json()
-    original = data.get("original")
-    input_img = data.get("input")
+    original = decode_base64_image(data.get("original"))
+    input_img = decode_base64_image(data.get("input"))
 
-    print("Original image length:", len(original) if original else "None")
-    print("Input image length:", len(input_img) if input_img else "None")
+    if original is None or input_img is None:
+        return jsonify({"error": "Image decoding failed"}), 400
 
-    img1 = readb64(original)
-    img2 = readb64(input_img)
-
-    if img1 is None or img2 is None:
-        return jsonify({"error": "One or both images could not be decoded"}), 400
-
-    similarity = compare_images(img1, img2)
+    similarity = compare_images(original, input_img)
     return jsonify({"similarity": similarity})
-
